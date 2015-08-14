@@ -26,34 +26,34 @@ public class GedcomToNeo4J {
     private static final Logger LOG = LoggerFactory.getLogger(GedcomToNeo4J.class);
 
     private final Label LBL_PERSON = DynamicLabel.label("Person");
-    private final Label LBL_FAMILY = DynamicLabel.label("Familie");
-    private final Label LBL_HENDELSE = DynamicLabel.label("Hendelse");
-    private final Label LBL_STED = DynamicLabel.label("Sted");
-    private final Label LBL_KILDE = DynamicLabel.label("Kilde");
+    private final Label LBL_FAMILY = DynamicLabel.label("Family");
+    private final Label LBL_EVENT = DynamicLabel.label("Event");
+    private final Label LBL_PLACE = DynamicLabel.label("Place");
+    private final Label LBL_SOURCE = DynamicLabel.label("Source");
 
-    private static Map<String, String> HENDELSE_TYPE_MAPPING = Maps.newHashMap();
+    private static Map<String, String> EVENT_TYPE_MAPPING = Maps.newHashMap();
 
     static {
-        HENDELSE_TYPE_MAPPING.put("EVEN", "Hendelse");
-        HENDELSE_TYPE_MAPPING.put("BIRT", "Fødsel");
-        HENDELSE_TYPE_MAPPING.put("DEAT", "Død");
-        HENDELSE_TYPE_MAPPING.put("OCCU", "Yrke");
-        HENDELSE_TYPE_MAPPING.put("RESI", "Bosted");
-        HENDELSE_TYPE_MAPPING.put("BAPM", "Dåp");
-        HENDELSE_TYPE_MAPPING.put("ADOP", "Adopsjon");
-        HENDELSE_TYPE_MAPPING.put("CENS", "Folketelling");
-        HENDELSE_TYPE_MAPPING.put("MARR", "Ekteskap");
-        HENDELSE_TYPE_MAPPING.put("BURI", "Begravelse");
-        HENDELSE_TYPE_MAPPING.put("PROB", "Skifte");
-        HENDELSE_TYPE_MAPPING.put("CONF", "Konfirmasjon");
-        HENDELSE_TYPE_MAPPING.put("ENGA", "Forlovelse");
-        HENDELSE_TYPE_MAPPING.put("NATI", "Nasjonalitet");
-        HENDELSE_TYPE_MAPPING.put("IMMI", "Immigrasjon");
-        HENDELSE_TYPE_MAPPING.put("NATU", "Statsborgerskap");
-        HENDELSE_TYPE_MAPPING.put("DIV", "Skilsmisse");
-        HENDELSE_TYPE_MAPPING.put("DIVF", "Separasjon");
-        HENDELSE_TYPE_MAPPING.put("RELI", "Religion");
-        HENDELSE_TYPE_MAPPING.put("RETI", "Pensjon");
+        EVENT_TYPE_MAPPING.put("EVEN", "Event");
+        EVENT_TYPE_MAPPING.put("BIRT", "Birth");
+        EVENT_TYPE_MAPPING.put("DEAT", "Death");
+        EVENT_TYPE_MAPPING.put("OCCU", "Occupation");
+        EVENT_TYPE_MAPPING.put("RESI", "Residence");
+        EVENT_TYPE_MAPPING.put("BAPM", "Baptism");
+        EVENT_TYPE_MAPPING.put("ADOP", "Adoption");
+        EVENT_TYPE_MAPPING.put("CENS", "Census");
+        EVENT_TYPE_MAPPING.put("MARR", "Marriage");
+        EVENT_TYPE_MAPPING.put("BURI", "Burial");
+        EVENT_TYPE_MAPPING.put("PROB", "Probate");
+        EVENT_TYPE_MAPPING.put("CONF", "Confirmation");
+        EVENT_TYPE_MAPPING.put("ENGA", "Engagement");
+        EVENT_TYPE_MAPPING.put("NATI", "Nationality");
+        EVENT_TYPE_MAPPING.put("IMMI", "Immigration");
+        EVENT_TYPE_MAPPING.put("NATU", "Naturalization");
+        EVENT_TYPE_MAPPING.put("DIV", "Divorce");
+        EVENT_TYPE_MAPPING.put("DIVF", "Divorce_Filed");
+        EVENT_TYPE_MAPPING.put("RELI", "Religion");
+        EVENT_TYPE_MAPPING.put("RETI", "Retirement");
     }
 
         private GraphDatabaseService graphDb;
@@ -71,14 +71,14 @@ public class GedcomToNeo4J {
             parser.gedcom.families.values().forEach(f -> {
                 Node family = createFamily(f);
 
-                Node mother = createFamilyRelationship(family, f.wife, FamilieRelasjoner.HUSTRU);
-                Node father = createFamilyRelationship(family, f.husband, FamilieRelasjoner.EKTEMANN);
+                Node mother = createFamilyRelationship(family, f.wife, FamilyRelationship.WIFE);
+                Node father = createFamilyRelationship(family, f.husband, FamilyRelationship.HUSBAND);
                 f.children.forEach(c -> {
-                    Node child = createFamilyRelationship(family, c, FamilieRelasjoner.BARN);
-                    createParentRelationship(child, mother, PersonRelasjoner.MOR, makeId(f.xref));
-                    createParentRelationship(child, father, PersonRelasjoner.FAR, makeId(f.xref));
+                    Node child = createFamilyRelationship(family, c, FamilyRelationship.CHILD);
+                    createParentRelationship(child, mother, PersonRelationship.MOTHER, makeId(f.xref));
+                    createParentRelationship(child, father, PersonRelationship.FATHER, makeId(f.xref));
                 });
-                f.events.forEach(e -> family.createRelationshipTo(createEvent(e, e.type.tag), FamilieRelasjoner.HENDELSE));
+                f.events.forEach(e -> family.createRelationshipTo(createEvent(e, e.type.tag), FamilyRelationship.EVENT));
             });
             tx.success();
         }
@@ -88,7 +88,7 @@ public class GedcomToNeo4J {
         if (parent != null) {
             LOG.info("createParentRelationship(({})-[:{}]->({})): Family {}",
                     new Object[]{child.getProperty("id"), relation.name(), parent.getProperty("id"), familyRef});
-            child.createRelationshipTo(parent, relation).setProperty("familie", familyRef);
+            child.createRelationshipTo(parent, relation).setProperty("family", familyRef);
         }
     }
 
@@ -112,17 +112,17 @@ public class GedcomToNeo4J {
     private Node fetchOrCreateIndividual(Individual individual) {
         LOG.info("fetchOrCreateIndividual('{}')", makeId(individual.xref));
         return fetchOrCreateAndPopulate(LBL_PERSON, "id", makeId(individual.xref), individual, (node, from) -> {
-            node.setProperty("navn", mapToStringArray(individual.names, n -> n.basic.trim()));
+            node.setProperty("name", mapToStringArray(individual.names, n -> n.basic.trim()));
 
             if (individual.sex != null) {
-                node.setProperty("kjonn", individual.sex.value);
+                node.setProperty("sex", individual.sex.value);
             }
             addNotes(node, individual.notes);
-            addCitations(PersonRelasjoner.SITAT, individual.citations, node);
+            addCitations(PersonRelationship.SITAT, individual.citations, node);
 
-            individual.attributes.forEach(a -> node.createRelationshipTo(createEvent(a, a.type.tag), PersonRelasjoner.HENDELSE));
-            individual.events.forEach(e -> node.createRelationshipTo(createEvent(e, e.type.tag), PersonRelasjoner.HENDELSE));
-            individual.names.forEach(n -> addCitations(PersonRelasjoner.NAVNESITAT, n.citations, node));
+            individual.attributes.forEach(a -> node.createRelationshipTo(createEvent(a, a.type.tag), PersonRelationship.EVENT));
+            individual.events.forEach(e -> node.createRelationshipTo(createEvent(e, e.type.tag), PersonRelationship.EVENT));
+            individual.names.forEach(n -> addCitations(PersonRelationship.NAVNESITAT, n.citations, node));
         });
     }
 
@@ -133,22 +133,22 @@ public class GedcomToNeo4J {
     }
 
     private Node createEvent(Event e, String type) {
-        Node attributt = graphDb.createNode(LBL_HENDELSE);
-        attributt.setProperty("type", mapHendelseType(type));
+        Node attribute = graphDb.createNode(LBL_EVENT);
+        attribute.setProperty("type", mapEventType(type));
 
         if (e.date != null) {
-            attributt.setProperty("dato", e.date.value);
+            attribute.setProperty("date", e.date.value);
         }
         if (e.place != null) {
-            attributt.createRelationshipTo(fetchOrCreatePlace(e.place), HendelseRelasjoner.STED);
+            attribute.createRelationshipTo(fetchOrCreatePlace(e.place), EventRelationship.PLACE);
         }
         if (e.description != null && e.description.value != null) {
-            attributt.setProperty("beskrivelse", e.description.value);
+            attribute.setProperty("description", e.description.value);
         }
-        addNotes(attributt, e.notes);
-        addCitations(HendelseRelasjoner.SITAT, e.citations, attributt);
+        addNotes(attribute, e.notes);
+        addCitations(EventRelationship.SITAT, e.citations, attribute);
 
-        return attributt;
+        return attribute;
     }
 
     private void addCitations(RelationshipType type, List<AbstractCitation> citations, Node node) {
@@ -165,15 +165,15 @@ public class GedcomToNeo4J {
     private Node fetchOrCreatePlaceChain(List<String> places) {
         LOG.info("fetchOrCreatePlaceChain({})", places);
 
-        List<Node> candidates = Lists.newArrayList(graphDb.findNodesByLabelAndProperty(LBL_STED, "navn", places.get(0)));
+        List<Node> candidates = Lists.newArrayList(graphDb.findNodesByLabelAndProperty(LBL_PLACE, "name", places.get(0)));
         LOG.trace("candidates: {}", candidates);
         Node node = candidates.stream().filter(candidate -> {
             List<Node> result = Lists.newArrayList(graphDb.traversalDescription()
-                    .relationships(StedRelasjoner.PLASSERING, Direction.OUTGOING)
+                    .relationships(PlaceRelationship.PLASSERING, Direction.OUTGOING)
                     .traverse(candidate)
                     .nodes());
 
-            return result.stream().map(place -> place.getProperty("navn")).collect(toList()).equals(places);
+            return result.stream().map(place -> place.getProperty("name")).collect(toList()).equals(places);
         }).findAny().orElse(null);
 
         if (node != null) {
@@ -182,36 +182,36 @@ public class GedcomToNeo4J {
         } else {
             LOG.debug("Creating new place '{}'", places.get(0));
 
-            Node place = graphDb.createNode(LBL_STED);
-            place.setProperty("navn", places.get(0));
+            Node place = graphDb.createNode(LBL_PLACE);
+            place.setProperty("name", places.get(0));
             if (places.size() > 1) {
-                place.createRelationshipTo(fetchOrCreatePlaceChain(places.subList(1, places.size())), StedRelasjoner.PLASSERING);
+                place.createRelationshipTo(fetchOrCreatePlaceChain(places.subList(1, places.size())), PlaceRelationship.PLASSERING);
             }
             return place;
         }
     }
 
     private void createCitation(Node on, RelationshipType r, CitationWithSource c) {
-        Node kilde = fetchOrCreateSource(c.source);
-        Relationship relasjon = on.createRelationshipTo(kilde, r);
+        Node Source = fetchOrCreateSource(c.source);
+        Relationship relation = on.createRelationshipTo(Source, r);
 
         if (c.whereInSource != null) {
-            relasjon.setProperty("sitat", c.whereInSource.value);
+            relation.setProperty("sitat", c.whereInSource.value);
         }
         if (c.certainty != null) {
-            relasjon.setProperty("kvalitet", c.certainty.value);
+            relation.setProperty("certainty", c.certainty.value);
         }
     }
 
     private Node fetchOrCreateSource(Source source) {
         LOG.info("fetchOrCreateSource('{}')", makeId(source.xref));
-        return fetchOrCreateAndPopulate(LBL_KILDE, "id", makeId(source.xref), source, (node, from) -> {
-            node.setProperty("tittel", mapToStringArray(from.title));
+        return fetchOrCreateAndPopulate(LBL_SOURCE, "id", makeId(source.xref), source, (node, from) -> {
+            node.setProperty("title", mapToStringArray(from.title));
             if (!isEmpty(from.publicationFacts)) {
-                node.setProperty("publisering", mapToStringArray(from.publicationFacts));
+                node.setProperty("publicationFacts", mapToStringArray(from.publicationFacts));
             }
             if (!isEmpty(from.originatorsAuthors)) {
-                node.setProperty("forfatter", mapToStringArray(from.originatorsAuthors));
+                node.setProperty("author", mapToStringArray(from.originatorsAuthors));
             }
             addNotes(node, from.notes);
         });
@@ -262,24 +262,24 @@ public class GedcomToNeo4J {
         return result;
     }
 
-    private static String mapHendelseType (String type){
-        String mappedType = HENDELSE_TYPE_MAPPING.get(type);
+    private static String mapEventType (String type){
+        String mappedType = EVENT_TYPE_MAPPING.get(type);
         return mappedType != null ? mappedType : type;
     }
 
-    private static enum FamilieRelasjoner implements RelationshipType {
-        HUSTRU, EKTEMANN, BARN, HENDELSE
+    private static enum FamilyRelationship implements RelationshipType {
+        WIFE, HUSBAND, CHILD, EVENT
     }
 
-    private static enum PersonRelasjoner implements RelationshipType {
-        HENDELSE, SITAT, NAVNESITAT, MOR, FAR
+    private static enum PersonRelationship implements RelationshipType {
+        EVENT, SITAT, NAVNESITAT, MOTHER, FATHER
     }
 
-    private static enum HendelseRelasjoner implements RelationshipType {
-        STED, SITAT
+    private static enum EventRelationship implements RelationshipType {
+        PLACE, SITAT
     }
 
-    private static enum StedRelasjoner implements RelationshipType {
+    private static enum PlaceRelationship implements RelationshipType {
         PLASSERING
     }
 
